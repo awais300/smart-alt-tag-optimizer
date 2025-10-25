@@ -1,0 +1,19 @@
+# Composer
+/vendor/
+/composer.lock
+
+# Environment files
+.env
+.env.local
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+error_log
+
+# Build artifacts
+/dist/
+/*.zip

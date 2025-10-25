@@ -1,0 +1,15 @@
+{
+  "core": "WordPress/WordPress#latest",
+  "plugins": [
+    "."
+  ],
+  "themes": [],
+  "env": {
+    "tests": {
+      "WORDPRESS_DB_NAME": "wordpress_tests",
+      "WORDPRESS_DB_USER": "root",
+      "WORDPRESS_DB_PASSWORD": "root",
+      "WORDPRESS_DB_HOST": "localhost"
+    }
+  }
+}

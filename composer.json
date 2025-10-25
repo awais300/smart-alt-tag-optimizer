@@ -1,0 +1,33 @@
+{
+  "name": "smartalt/smart-alt-tag-optimizer",
+  "description": "SEO-optimized WordPress plugin for automatic alt text generation with AI integration, server-side HTML injection, and WooCommerce support.",
+  "type": "wordpress-plugin",
+  "license": "GPL-2.0-or-later",
+  "authors": [
+    {
+      "name": "SmartAlt Team",
+      "role": "Developer"
+    }
+  ],
+  "require": {
+    "php": ">=7.4"
+  },
+  "require-dev": {
+    "phpunit/phpunit": "^9.5",
+    "mockery/mockery": "^1.5"
+  },
+  "autoload": {
+    "psr-4": {
+      "SmartAlt\\": "src/"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "SmartAlt\\Tests\\": "tests/"
+    }
+  },
+  "config": {
+    "optimize-autoloader": true,
+    "preferred-install": "dist"
+  }
+}
