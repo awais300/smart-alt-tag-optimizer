@@ -10,7 +10,7 @@
  * Plugin Name:       Smart Alt Tag Optimizer
  * Plugin URI:        https://github.com/smartalt/plugin
  * Description:       SEO-optimized automatic alt text generation with AI integration, server-side injection, and WooCommerce support.
- * Version:           1.0.0
+ * Version:           1.1.0
  * Author:            SmartAlt Team
  * Author URI:        https://smartalt.dev
  * License:           GPL-2.0-or-later
