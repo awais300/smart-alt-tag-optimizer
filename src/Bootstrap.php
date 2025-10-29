@@ -66,6 +66,10 @@ class Bootstrap {
 		Logger::instance();
 		Scheduler::instance();
 
+		// Initialize settings page and register admin_menu hook
+	    $settings_page = SettingsPage::instance();
+	    add_action( 'admin_menu', [ $settings_page, 'register_menu' ] );
+
 		// Register hooks for post processing
 		$post_processor = PostProcessor::instance();
 		add_action( 'save_post', [ $post_processor, 'process_post' ], 15, 2 );
@@ -110,8 +114,10 @@ class Bootstrap {
 	public function admin_init() {
 		// Register settings page
 		$settings_page = SettingsPage::instance();
-		add_action( 'admin_menu', [ $settings_page, 'register_menu' ] );
 		add_action( 'admin_init', [ $settings_page, 'register_settings' ] );
+
+		// Add dashboard widget
+		add_action('wp_dashboard_setup', [$settings_page, 'add_dashboard_widget']);
 	}
 
 	/**
