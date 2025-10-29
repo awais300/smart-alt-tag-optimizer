@@ -228,9 +228,9 @@ class SettingsPage
 		<div class="wrap smartalt-settings">
 			<h1><?php esc_html_e('Smart Alt Tag Optimizer', 'smart-alt-tag-optimizer'); ?></h1>
 
-			<!-- ✅ ONE SINGLE FORM FOR ALL TABS -->
 			<form method="post" action="options.php" class="smartalt-master-form">
 				<?php settings_fields(self::OPTION_GROUP); ?>
+				<?php wp_nonce_field('smartalt_bulk_nonce', 'smartalt_bulk_nonce'); ?>
 
 				<div class="smartalt-tabs">
 					<nav class="nav-tab-wrapper">
@@ -594,7 +594,7 @@ class SettingsPage
 		<script>
 			document.getElementById('smartalt-test-connection')?.addEventListener('click', function() {
 				if (confirm('<?php esc_attr_e('Test AI connection? This will make a test API call.', 'smart-alt-tag-optimizer'); ?>')) {
-					const nonce = document.querySelector('input[name="_wpnonce"]')?.value;
+					const nonce = document.querySelector('input[name="smartalt_bulk_nonce"]')?.value;
 					fetch(ajaxurl, {
 						method: 'POST',
 						headers: {
@@ -781,7 +781,8 @@ class SettingsPage
 			function smartaltBulkRun(dryRun) {
 				const scope = document.getElementById('smartalt_bulk_scope').value;
 				const forceUpdate = document.getElementById('smartalt_bulk_force_update').checked;
-				const nonce = document.querySelector('input[name="_wpnonce"]')?.value;
+				const nonce = document.querySelector('input[name="smartalt_bulk_nonce"]')?.value;
+
 
 				document.getElementById('smartalt-bulk-progress').style.display = 'block';
 				document.getElementById('smartalt-progress-text').textContent = '<?php esc_attr_e('Starting...', 'smart-alt-tag-optimizer'); ?>';
