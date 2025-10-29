@@ -43,12 +43,12 @@ class AdminAjax
 	{
 		// Verify nonce using correct logic: ! isset || ! verify (not && )
 		if (! isset($_POST['_wpnonce']) || ! wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['_wpnonce'])), 'smartalt_bulk_nonce')) {
-			wp_send_json_error(['message' => __('Security check failed. Please refresh and try again.', SMARTALT_TEXT_DOMAIN)]);
+			wp_send_json_error(['message' => __('Security check failed. Please refresh and try again.', 'smart-alt-tag-optimizer')]);
 		}
 
 		// Capability check
 		if (! current_user_can('manage_options')) {
-			wp_send_json_error(['message' => __('Unauthorized access.', SMARTALT_TEXT_DOMAIN)]);
+			wp_send_json_error(['message' => __('Unauthorized access.', 'smart-alt-tag-optimizer')]);
 		}
 
 		// Sanitize input
@@ -59,7 +59,7 @@ class AdminAjax
 		// Validate scope
 		$valid_scopes = ['all_media', 'attached_only', 'attached_products'];
 		if (! in_array($scope, $valid_scopes, true)) {
-			wp_send_json_error(['message' => __('Invalid scope.', SMARTALT_TEXT_DOMAIN)]);
+			wp_send_json_error(['message' => __('Invalid scope.', 'smart-alt-tag-optimizer')]);
 		}
 
 		try {
@@ -80,17 +80,17 @@ class AdminAjax
 	public static function handle_bulk_progress()
 	{
 		if (! isset($_POST['_wpnonce']) || ! wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['_wpnonce'])), 'smartalt_bulk_nonce')) {
-			wp_send_json_error(['message' => __('Security check failed.', SMARTALT_TEXT_DOMAIN)]);
+			wp_send_json_error(['message' => __('Security check failed.', 'smart-alt-tag-optimizer')]);
 		}
 
 		if (! current_user_can('manage_options')) {
-			wp_send_json_error(['message' => __('Unauthorized access.', SMARTALT_TEXT_DOMAIN)]);
+			wp_send_json_error(['message' => __('Unauthorized access.', 'smart-alt-tag-optimizer')]);
 		}
 
 		$job_id = isset($_POST['job_id']) ? sanitize_text_field(wp_unslash($_POST['job_id'])) : '';
 
 		if (! $job_id || ! preg_match('/^smartalt_bulk_[a-f0-9]+$/', $job_id)) {
-			wp_send_json_error(['message' => __('Invalid job ID.', SMARTALT_TEXT_DOMAIN)]);
+			wp_send_json_error(['message' => __('Invalid job ID.', 'smart-alt-tag-optimizer')]);
 		}
 
 		try {
@@ -110,17 +110,17 @@ class AdminAjax
 	public static function handle_clear_ai_cache()
 	{
 		if (! isset($_POST['_wpnonce']) || ! wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['_wpnonce'])), 'smartalt_bulk_nonce')) {
-			wp_send_json_error(['message' => __('Security check failed.', SMARTALT_TEXT_DOMAIN)]);
+			wp_send_json_error(['message' => __('Security check failed.', 'smart-alt-tag-optimizer')]);
 		}
 
 		if (! current_user_can('manage_options')) {
-			wp_send_json_error(['message' => __('Unauthorized access.', SMARTALT_TEXT_DOMAIN)]);
+			wp_send_json_error(['message' => __('Unauthorized access.', 'smart-alt-tag-optimizer')]);
 		}
 
 		try {
 			AttachmentHandler::clear_all_ai_caches();
 			Logger::log(null, null, null, null, 'system', null, 'success', 'AI caches cleared by ' . wp_get_current_user()->user_email, 'info');
-			wp_send_json_success(['message' => __('AI cache cleared successfully.', SMARTALT_TEXT_DOMAIN)]);
+			wp_send_json_success(['message' => __('AI cache cleared successfully.', 'smart-alt-tag-optimizer')]);
 		} catch (\Exception $e) {
 			wp_send_json_error(['message' => $e->getMessage()]);
 		}
@@ -136,26 +136,26 @@ class AdminAjax
 	public static function handle_test_connection()
 	{
 		if (! isset($_POST['_wpnonce']) || ! wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['_wpnonce'])), 'smartalt_bulk_nonce')) {
-			wp_send_json_error(['message' => __('Security check failed.', SMARTALT_TEXT_DOMAIN)]);
+			wp_send_json_error(['message' => __('Security check failed.', 'smart-alt-tag-optimizer')]);
 		}
 
 		if (! current_user_can('manage_options')) {
-			wp_send_json_error(['message' => __('Unauthorized access.', SMARTALT_TEXT_DOMAIN)]);
+			wp_send_json_error(['message' => __('Unauthorized access.', 'smart-alt-tag-optimizer')]);
 		}
 
 		try {
 			$connector = AiConnectorFactory::get_connector();
 
 			if (! $connector) {
-				wp_send_json_error(['message' => __('AI connector not configured.', SMARTALT_TEXT_DOMAIN)]);
+				wp_send_json_error(['message' => __('AI connector not configured.', 'smart-alt-tag-optimizer')]);
 			}
 
 			$success = $connector->test_connection();
 
 			if ($success) {
-				wp_send_json_success(['message' => __('Connection successful! Your API endpoint is reachable.', SMARTALT_TEXT_DOMAIN)]);
+				wp_send_json_success(['message' => __('Connection successful! Your API endpoint is reachable.', 'smart-alt-tag-optimizer')]);
 			} else {
-				wp_send_json_error(['message' => __('Connection failed. Check your endpoint URL and API key.', SMARTALT_TEXT_DOMAIN)]);
+				wp_send_json_error(['message' => __('Connection failed. Check your endpoint URL and API key.', 'smart-alt-tag-optimizer')]);
 			}
 		} catch (\Exception $e) {
 			wp_send_json_error(['message' => $e->getMessage()]);
@@ -170,17 +170,17 @@ class AdminAjax
 	public static function handle_revert_log()
 	{
 		if (! isset($_POST['_wpnonce']) || ! wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['_wpnonce'])), 'smartalt_bulk_nonce')) {
-			wp_send_json_error(['message' => __('Security check failed.', SMARTALT_TEXT_DOMAIN)]);
+			wp_send_json_error(['message' => __('Security check failed.', 'smart-alt-tag-optimizer')]);
 		}
 
 		if (! current_user_can('manage_options')) {
-			wp_send_json_error(['message' => __('Unauthorized access.', SMARTALT_TEXT_DOMAIN)]);
+			wp_send_json_error(['message' => __('Unauthorized access.', 'smart-alt-tag-optimizer')]);
 		}
 
 		$log_id = isset($_POST['log_id']) ? (int) $_POST['log_id'] : 0;
 
 		if (! $log_id) {
-			wp_send_json_error(['message' => __('Invalid log ID.', SMARTALT_TEXT_DOMAIN)]);
+			wp_send_json_error(['message' => __('Invalid log ID.', 'smart-alt-tag-optimizer')]);
 		}
 
 		try {
@@ -193,7 +193,7 @@ class AdminAjax
 			);
 
 			if (! $log || ! $log->attachment_id || ! $log->old_alt) {
-				wp_send_json_error(['message' => __('Cannot revert this entry.', SMARTALT_TEXT_DOMAIN)]);
+				wp_send_json_error(['message' => __('Cannot revert this entry.', 'smart-alt-tag-optimizer')]);
 			}
 
 			// Revert alt text
@@ -202,7 +202,7 @@ class AdminAjax
 			// Log the revert
 			Logger::log($log->new_alt, $log->old_alt, $log->attachment_id, $log->post_id, 'revert', null, 'success', 'Reverted by ' . wp_get_current_user()->user_email);
 
-			wp_send_json_success(['message' => __('Alt text reverted successfully.', SMARTALT_TEXT_DOMAIN)]);
+			wp_send_json_success(['message' => __('Alt text reverted successfully.', 'smart-alt-tag-optimizer')]);
 		} catch (\Exception $e) {
 			wp_send_json_error(['message' => $e->getMessage()]);
 		}
