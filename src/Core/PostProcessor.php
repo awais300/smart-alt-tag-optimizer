@@ -1,4 +1,5 @@
 <?php
+
 /**
  * PostProcessor - Handles post save hooks and processing.
  *
@@ -13,7 +14,8 @@ use SmartAlt\Utils\Sanitize;
 /**
  * Post processor singleton.
  */
-class PostProcessor {
+class PostProcessor
+{
 
 	/**
 	 * Singleton instance.
@@ -34,8 +36,9 @@ class PostProcessor {
 	 *
 	 * @return PostProcessor
 	 */
-	public static function instance() {
-		if ( null === self::$instance ) {
+	public static function instance()
+	{
+		if (null === self::$instance) {
 			self::$instance = new self();
 		}
 		return self::$instance;
@@ -56,42 +59,43 @@ class PostProcessor {
 	 *
 	 * @return void
 	 */
-	public function process_post( $post_id, $post ) {
+	public function process_post($post_id, $post)
+	{
 		// Skip if plugin not enabled
-		if ( ! get_option( 'smartalt_enabled' ) ) {
+		if (! get_option('smartalt_enabled')) {
 			return;
 		}
 
 		// Skip if already processing this post (avoid infinite loops)
-		if ( isset( $this->processing_queue[ $post_id ] ) ) {
+		if (isset($this->processing_queue[$post_id])) {
 			return;
 		}
 
 		// Mark as processing
-		$this->processing_queue[ $post_id ] = true;
+		$this->processing_queue[$post_id] = true;
 
 		// Skip autosaves and revisions
-		if ( wp_is_post_autosave( $post_id ) || wp_is_post_revision( $post_id ) ) {
-			unset( $this->processing_queue[ $post_id ] );
+		if (wp_is_post_autosave($post_id) || wp_is_post_revision($post_id)) {
+			unset($this->processing_queue[$post_id]);
 			return;
 		}
 
 		// Skip non-public post types
-		$post_type_obj = get_post_type_object( $post->post_type );
-		if ( ! $post_type_obj || ! $post_type_obj->public ) {
-			unset( $this->processing_queue[ $post_id ] );
+		$post_type_obj = get_post_type_object($post->post_type);
+		if (! $post_type_obj || ! $post_type_obj->public) {
+			unset($this->processing_queue[$post_id]);
 			return;
 		}
 
 		// Respect force_update flag
-		$force_update = (bool) get_transient( "smartalt_force_update_{$post_id}" );
+		$force_update = (bool) get_transient("smartalt_force_update_{$post_id}");
 
 		// Collect all images for this post
 		$images_to_process = [];
 
 		// Get attached images
-		$attached_ids = AttachmentHandler::get_attached_images( $post_id );
-		foreach ( $attached_ids as $attachment_id ) {
+		$attached_ids = AttachmentHandler::get_attached_images($post_id);
+		foreach ($attached_ids as $attachment_id) {
 			$images_to_process[] = [
 				'type'            => 'attached',
 				'attachment_id'   => $attachment_id,
@@ -101,14 +105,14 @@ class PostProcessor {
 		}
 
 		// Get inline images from content
-		$inline_images = AttachmentHandler::extract_inline_images( $post->post_content );
-		foreach ( $inline_images as $image_data ) {
+		$inline_images = AttachmentHandler::extract_inline_images($post->post_content);
+		foreach ($inline_images as $image_data) {
 			// Try to find attachment ID
-			$attachment_id = AttachmentHandler::find_attachment_for_inline_image( $image_data['url'], $post_id );
+			$attachment_id = AttachmentHandler::find_attachment_for_inline_image($image_data['url'], $post_id);
 
-			if ( $attachment_id ) {
+			if ($attachment_id) {
 				// Skip if already in attached list
-				if ( in_array( $attachment_id, $attached_ids, true ) ) {
+				if (in_array($attachment_id, $attached_ids, true)) {
 					continue;
 				}
 
@@ -133,13 +137,13 @@ class PostProcessor {
 		}
 
 		// Process each image
-		foreach ( $images_to_process as $image ) {
-			$this->process_image( $image, $post );
+		foreach ($images_to_process as $image) {
+			$this->process_image($image, $post);
 		}
 
 		// Clean up transient
-		delete_transient( "smartalt_force_update_{$post_id}" );
-		unset( $this->processing_queue[ $post_id ] );
+		delete_transient("smartalt_force_update_{$post_id}");
+		unset($this->processing_queue[$post_id]);
 	}
 
 	/**
@@ -150,19 +154,29 @@ class PostProcessor {
 	 *
 	 * @return void
 	 */
-	public function process_attachment( $post_id, $post ) {
+	public function process_attachment($post_id, $post)
+	{
 		// Skip if plugin not enabled
-		if ( ! get_option( 'smartalt_enabled' ) ) {
+		if (! get_option('smartalt_enabled')) {
 			return;
 		}
 
 		// Only process if this attachment is attached to a post
-		if ( ! $post->post_parent ) {
+		if (! $post->post_parent) {
+			return;
+		}
+
+		// Get parent post
+		$parent_post = get_post($post->post_parent);
+		if (! $parent_post) {
 			return;
 		}
 
 		// Check if alt already set
-		if ( AttachmentHandler::has_alt( $post_id ) ) {
+		$has_alt = AttachmentHandler::has_alt($post_id);
+		$force_update = (bool) get_transient("smartalt_force_update_{$post_id}");
+
+		if ($has_alt && ! $force_update) {
 			return;
 		}
 
@@ -171,13 +185,13 @@ class PostProcessor {
 			'type'          => 'attached',
 			'attachment_id' => $post_id,
 			'post_id'       => $post->post_parent,
-			'force_update'  => false,
+			'force_update'  => $force_update,
 		];
 
-		$parent_post = get_post( $post->post_parent );
-		if ( $parent_post ) {
-			$this->process_image( $image_data, $parent_post );
-		}
+		$this->process_image($image_data, $parent_post);
+
+		// Clean up
+		delete_transient("smartalt_force_update_{$post_id}");
 	}
 
 	/**
@@ -188,55 +202,165 @@ class PostProcessor {
 	 *
 	 * @return void
 	 */
-	private function process_image( $image, $post ) {
-		$alt_source = get_option( 'smartalt_alt_source', 'post_title' );
+	private function process_image($image, $post)
+	{
+		$generation_method = get_option('smartalt_generation_method', 'post_title');
 		$new_alt = null;
 		$old_alt = null;
 		$source = 'manual';
 
 		// For attached images, check current alt
-		if ( in_array( $image['type'], [ 'attached', 'inline_attached' ], true ) ) {
-			$old_alt = AttachmentHandler::get_alt( $image['attachment_id'] );
+		if (in_array($image['type'], ['attached', 'inline_attached'], true)) {
+			$old_alt = AttachmentHandler::get_alt($image['attachment_id']);
+
+			// Get force update flag
+			$force_update = isset($image['force_update']) ? $image['force_update'] : (bool) get_transient("smartalt_force_update_{$image['attachment_id']}");
 
 			// Skip if alt exists and not force update
-			if ( $old_alt && ! $image['force_update'] ) {
+			if ($old_alt && ! $force_update) {
 				return;
 			}
 		}
 
-		// Generate alt based on source setting
-		if ( 'ai' === $alt_source ) {
+		// Generate alt based on generation method setting
+		if ('ai' === $generation_method) {
 			// Try to generate via AI
-			$new_alt = $this->generate_alt_via_ai( $image, $post );
-			if ( $new_alt ) {
+			$new_alt = $this->generate_alt_via_ai($image, $post);
+			if ($new_alt) {
 				$source = 'ai';
 			} else {
 				// AI failed, fallback to post_title
-				$new_alt = Sanitize::alt_text( $post->post_title );
+				$new_alt = Sanitize::alt_text($post->post_title);
 				$source = 'post_title_fallback';
 			}
 		} else {
 			// Use post_title
-			$new_alt = Sanitize::alt_text( $post->post_title );
+			$new_alt = Sanitize::alt_text($post->post_title);
 			$source = 'post_title';
 		}
 
 		// Ensure we have alt text
-		if ( ! $new_alt ) {
-			Logger::log( $old_alt, null, $image['attachment_id'] ?? null, $image['post_id'], $source, null, 'skipped', 'No alt text generated' );
+		if (! $new_alt) {
+			Logger::log($old_alt, null, $image['attachment_id'] ?? null, $image['post_id'], $source, null, 'skipped', 'No alt text generated');
+			return;
+		}
+
+		// Don't update if new alt is same as old alt
+		if ($old_alt === $new_alt) {
+			Logger::log($old_alt, $new_alt, $image['attachment_id'] ?? null, $image['post_id'], $source, null, 'skipped', 'Alt text unchanged');
 			return;
 		}
 
 		// Update attachment alt
-		if ( isset( $image['attachment_id'] ) ) {
-			AttachmentHandler::set_alt( $image['attachment_id'], $new_alt, $image['force_update'] );
+		if (isset($image['attachment_id'])) {
+			AttachmentHandler::set_alt($image['attachment_id'], $new_alt, true);
+
+			$this->update_post_content_with_alt(
+				$image['post_id'],
+				$image['attachment_id'],
+				$new_alt
+			);
 
 			// Log the change
-			Logger::log( $old_alt, $new_alt, $image['attachment_id'], $image['post_id'], $source, null, 'success' );
+			Logger::log($old_alt, $new_alt, $image['attachment_id'], $image['post_id'], $source, null, 'success');
 		} else {
-			// For inline unattached images, we'd need to update post content HTML
-			// This is handled by Frontend\Injector
-			Logger::log( null, $new_alt, null, $image['post_id'], $source, null, 'success', 'Inline unattached image' );
+			// For inline unattached images
+			Logger::log(null, $new_alt, null, $image['post_id'], $source, null, 'success', 'Inline unattached image');
+		}
+	}
+
+	/**
+	 * Update post content HTML with new alt text in img tags.
+	 *
+	 * Syncs alt text from media library into post content blocks.
+	 *
+	 * @param int    $post_id       Post ID.
+	 * @param int    $attachment_id Attachment ID.
+	 * @param string $new_alt       New alt text.
+	 *
+	 * @return void
+	 */
+	private function update_post_content_with_alt($post_id, $attachment_id, $new_alt)
+	{
+		if (! $post_id || ! $attachment_id) {
+			return;
+		}
+
+		$post = get_post($post_id);
+		if (! $post) {
+			return;
+		}
+
+		$image_url = wp_get_attachment_url($attachment_id);
+		if (! $image_url) {
+			return;
+		}
+
+		$content = $post->post_content;
+
+		// Find img tags with this URL and add/update alt
+		// Match img tag with this specific src
+		$pattern = '/<img\s+([^>]*?)src=[\'"]' . preg_quote($image_url, '/') . '[\'"]([^>]*)>/i';
+
+		$replacement = function ($matches) use ($new_alt) {
+			$tag = $matches[0];
+			$escaped_alt = esc_attr($new_alt);
+
+			// Check if alt already exists
+			if (preg_match('/alt=[\'"][^\'"]*[\'"]/', $tag)) {
+				// Replace existing alt attribute
+				return preg_replace('/alt=[\'"][^\'"]*[\'"]/', 'alt="' . $escaped_alt . '"', $tag);
+			} else {
+				// Add new alt attribute before closing >
+				return rtrim($tag, '>') . ' alt="' . $escaped_alt . '" >';
+			}
+		};
+
+		$new_content = preg_replace_callback($pattern, $replacement, $content);
+
+		// Only update if content changed
+		if ($new_content !== $content) {
+			wp_update_post(
+				[
+					'ID'           => $post_id,
+					'post_content' => $new_content,
+				],
+				false
+			);
+
+			// Clear block editor cache
+			wp_cache_delete($post_id, 'posts');
+		}
+	}
+
+	/**
+	 * Process an image directly (used for bulk updates and external callers).
+	 *
+	 * @param int      $attachment_id Attachment ID.
+	 * @param \WP_Post $parent_post   Parent post object (for context).
+	 * @param bool     $force_update  Force update even if alt exists.
+	 *
+	 * @return bool Success or failure.
+	 */
+	public function process_image_direct($attachment_id, $parent_post = null, $force_update = false)
+	{
+		if (! $attachment_id || ! is_object($parent_post)) {
+			return false;
+		}
+
+		$image_data = [
+			'type'          => 'attached',
+			'attachment_id' => $attachment_id,
+			'post_id'       => $parent_post->ID ?? 0,
+			'force_update'  => $force_update,
+		];
+
+		try {
+			$this->process_image($image_data, $parent_post);
+			return true;
+		} catch (\Exception $e) {
+			Logger::log(null, null, $attachment_id, $parent_post->ID ?? null, 'bulk', null, 'error', $e->getMessage(), 'error');
+			return false;
 		}
 	}
 
@@ -244,50 +368,78 @@ class PostProcessor {
 	 * Generate alt text via AI connector.
 	 *
 	 * @param array    $image Image data array.
-	 * @param \WP_Post $post  Parent post object.
+	 * @param \WP_Post $post  Parent post object (can be orphaned context).
 	 *
 	 * @return string|null Generated alt text or null if failed.
 	 */
-	private function generate_alt_via_ai( $image, $post ) {
+	private function generate_alt_via_ai($image, $post)
+	{
 		// Check if AI connector is configured
-		$endpoint = get_option( 'smartalt_ai_endpoint' );
-		if ( ! $endpoint ) {
+		$endpoint = get_option('smartalt_ai_endpoint');
+		if (! $endpoint) {
 			return null;
 		}
 
-		// Check AI cache first
-		if ( isset( $image['attachment_id'] ) && get_option( 'smartalt_cache_ai_results' ) ) {
-			$cache = AttachmentHandler::get_ai_cache( $image['attachment_id'] );
-			if ( $cache ) {
+		// Check AI cache first (only for actual attachments with parent posts)
+		if (isset($image['attachment_id']) && $image['attachment_id'] && get_option('smartalt_cache_ai_results')) {
+			$cache = AttachmentHandler::get_ai_cache($image['attachment_id']);
+			if ($cache) {
 				// Cache hit, use existing alt
-				return AttachmentHandler::get_alt( $image['attachment_id'] );
+				return AttachmentHandler::get_alt($image['attachment_id']);
 			}
 		}
 
 		try {
 			// Get AI connector
 			$connector = AiConnectorFactory::get_connector();
-			if ( ! $connector ) {
+			if (! $connector) {
 				return null;
 			}
 
-			// Prepare context
-			$context = AttachmentHandler::get_context( $image['attachment_id'] ?? null, $image['post_id'] );
+			// Get attachment URL for AI
+			$image_url = wp_get_attachment_url($image['attachment_id'] ?? 0);
+			if (! $image_url) {
+				return null;
+			}
+
+			// Prepare context with attachment metadata
+			$context = [
+				'attachment_id' => $image['attachment_id'] ?? 0,
+				'url'           => $image_url,
+				'post_title'    => $post->post_title,
+				'post_excerpt'  => $post->post_excerpt,
+				'post_content'  => $post->post_content ?? '',
+			];
+
+			// Get attachment metadata for additional context
+			if (isset($image['attachment_id']) && $image['attachment_id']) {
+				$attachment = get_post($image['attachment_id']);
+				if ($attachment) {
+					$context['attachment_title'] = $attachment->post_title;
+					$context['attachment_description'] = $attachment->post_content;
+					$meta = wp_get_attachment_metadata($image['attachment_id']);
+					if ($meta) {
+						$context['dimensions'] = isset($meta['width']) && isset($meta['height'])
+							? "{$meta['width']}x{$meta['height']}"
+							: null;
+					}
+				}
+			}
 
 			// Generate alt
-			$alt = $connector->generate_alt( $image['attachment_id'] ?? 0, $context );
+			$alt = $connector->generate_alt($image['attachment_id'] ?? 0, $context);
 
-			if ( $alt && isset( $image['attachment_id'] ) ) {
+			if ($alt && isset($image['attachment_id'])) {
 				// Cache the AI result
-				if ( get_option( 'smartalt_cache_ai_results' ) ) {
+				if (get_option('smartalt_cache_ai_results')) {
 					$model = $connector->get_model_name();
-					AttachmentHandler::set_ai_cache( $image['attachment_id'], $model );
+					AttachmentHandler::set_ai_cache($image['attachment_id'], $model);
 				}
 			}
 
 			return $alt;
-		} catch ( \Exception $e ) {
-			Logger::log( null, null, $image['attachment_id'] ?? null, $image['post_id'], 'ai', null, 'error', $e->getMessage(), 'error' );
+		} catch (\Exception $e) {
+			Logger::log(null, null, $image['attachment_id'] ?? null, $post->ID ?? null, 'ai', null, 'error', $e->getMessage(), 'error');
 			return null;
 		}
 	}

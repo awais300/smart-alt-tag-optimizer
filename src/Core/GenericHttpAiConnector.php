@@ -45,13 +45,30 @@ class GenericHttpAiConnector implements AiConnectorInterface
 	 *
 	 * @var int
 	 */
-	const HTTP_TIMEOUT = 15;
+	const HTTP_TIMEOUT = 300;
 
 	/**
 	 * Constructor.
 	 */
-	public function __construct() {}
+	public function __construct()
+	{
+		// Allow filter to override circuit breaker TTL
+		$this->circuit_breaker_ttl = apply_filters(
+			'smartalt_circuit_breaker_ttl',
+			self::CIRCUIT_BREAKER_TTL
+		);
+	}
 
+	/**
+	 * Generate alt text for a single image (attachment).
+	 *
+	 * @param int   $attachment_id Attachment ID.
+	 * @param array $context       Context data.
+	 *
+	 * @return string|null Generated alt text or null on failure.
+	 *
+	 * @throws \Exception
+	 */
 	/**
 	 * Generate alt text for a single image (attachment).
 	 *
@@ -66,14 +83,19 @@ class GenericHttpAiConnector implements AiConnectorInterface
 	{
 		// Check circuit breaker
 		if ($this->is_circuit_broken()) {
-			throw new \Exception('AI connector circuit breaker is active. Please try again later.');
+			$msg = 'AI connector circuit breaker is active. Please try again later.';
+			error_log('Circuit breaker active for attachment: ' . $attachment_id);
+			throw new \Exception($msg);
 		}
 
 		// Validate configuration
 		$endpoint = get_option('smartalt_ai_endpoint');
 		if (! $endpoint) {
+			error_log('No AI endpoint configured');
 			throw new \Exception('AI endpoint not configured.');
 		}
+
+		error_log('Starting AI generation for attachment: ' . $attachment_id);
 
 		// Build request
 		$request = $this->build_request($context);
@@ -83,7 +105,9 @@ class GenericHttpAiConnector implements AiConnectorInterface
 
 		if (is_wp_error($response)) {
 			$this->record_failure();
-			throw new \Exception('AI API request failed: ' . $response->get_error_message());
+			$msg = 'AI API request failed: ' . $response->get_error_message();
+			error_log($msg);
+			throw new \Exception($msg);
 		}
 
 		// Extract alt from response
@@ -91,11 +115,13 @@ class GenericHttpAiConnector implements AiConnectorInterface
 
 		if (! $alt) {
 			$this->record_failure();
+			error_log('No alt text extracted from response for attachment: ' . $attachment_id);
 			throw new \Exception('No alt text in API response.');
 		}
 
 		// Success - reset failure counter
 		$this->reset_failure_counter();
+		error_log('Successfully generated alt for attachment: ' . $attachment_id . ' = ' . $alt);
 
 		// Sanitize and return
 		return Sanitize::alt_text($alt, 125);
@@ -175,35 +201,40 @@ class GenericHttpAiConnector implements AiConnectorInterface
 				return false;
 			}
 
+			// Build a simple test request
 			$test_context = [
 				'image_url'      => 'https://example.com/image.jpg',
-				'post_title'     => 'Test Post',
+				'post_title'     => 'Test',
 				'post_excerpt'   => 'Test excerpt',
 				'post_content'   => 'Test content',
-				'images'         => [
-					[
-						'url'   => 'https://example.com/image.jpg',
-						'alt'   => '',
-						'match' => '<img src="https://example.com/image.jpg" />',
-					],
-				],
-				'image_count'    => 1,
+				'image_filename' => 'test.jpg',
+				'max_length'     => 125,
 			];
 
-			$request = $this->build_batch_request($test_context);
+			$request_body = $this->build_request($test_context);
+
+			// Make HTTP request with increased timeout for local models
 			$response = wp_remote_post($endpoint, [
-				'timeout' => self::HTTP_TIMEOUT,
-				'body'    => $request,
-				'headers' => $this->get_headers(),
+				'timeout'   => 300, // Increased from 15
+				'sslverify' => false, // Important for localhost
+				'body'      => $request_body,
+				'headers'   => $this->get_headers(),
 			]);
 
 			if (is_wp_error($response)) {
+				error_log('Ollama test connection error: ' . $response->get_error_message());
 				return false;
 			}
 
 			$status = wp_remote_retrieve_response_code($response);
+			$body = wp_remote_retrieve_body($response);
+
+			// Log for debugging
+			error_log('Ollama test response: Status ' . $status . ', Body: ' . substr($body, 0, 200));
+
 			return $status >= 200 && $status < 300;
 		} catch (\Exception $e) {
+			error_log('Ollama test connection exception: ' . $e->getMessage());
 			return false;
 		}
 	}
@@ -237,13 +268,14 @@ class GenericHttpAiConnector implements AiConnectorInterface
 			]);
 		}
 
-		// Replace placeholders
+		// Replace placeholders - provide sensible defaults for orphaned images
 		$placeholders = [
 			'{image_url}'      => $context['url'] ?? '',
-			'{post_title}'     => $context['post_title'] ?? '',
+			'{post_title}'     => $context['post_title'] ?? $context['attachment_title'] ?? 'Image',
 			'{post_excerpt}'   => $context['post_excerpt'] ?? '',
 			'{post_content}'   => substr($context['post_content'] ?? '', 0, 500),
-			'{image_filename}' => $context['filename'] ?? '',
+			'{image_filename}' => $context['filename'] ?? basename(parse_url($context['url'] ?? '', PHP_URL_PATH)),
+			'{dimensions}'     => $context['dimensions'] ?? '',
 			'{max_length}'     => 125,
 		];
 
@@ -433,26 +465,44 @@ class GenericHttpAiConnector implements AiConnectorInterface
 		$method = in_array(strtoupper($method), ['GET', 'POST'], true) ? strtoupper($method) : 'POST';
 
 		$args = [
-			'method'  => $method,
-			'timeout' => self::HTTP_TIMEOUT,
-			'headers' => $this->get_headers(),
+			'method'    => $method,
+			'timeout'   => self::HTTP_TIMEOUT,
+			'sslverify' => false,
+			'headers'   => $this->get_headers(),
+			'blocking'  => true,
 		];
 
 		if ('POST' === $method) {
 			$args['body'] = $body;
 		}
 
+		error_log('Ollama request to: ' . $endpoint);
+		error_log('Request body: ' . substr($body, 0, 200));
+
 		// First attempt
 		$response = wp_remote_post($endpoint, $args);
 
-		// Retry once on transient errors
 		if (is_wp_error($response)) {
+			error_log('Ollama error (attempt 1): ' . $response->get_error_message());
 			$error_code = $response->get_error_code();
-			// Retry on timeout or connection errors
+
+			// Retry on transient errors
 			if (in_array($error_code, ['http_request_failed', 'connect_timeout', 'operation_timed_out'], true)) {
-				sleep(1);
+				error_log('Retrying Ollama request...');
+				sleep(2);
 				$response = wp_remote_post($endpoint, $args);
+
+				if (is_wp_error($response)) {
+					error_log('Ollama error (attempt 2): ' . $response->get_error_message());
+				}
 			}
+		}
+
+		if (!is_wp_error($response)) {
+			$status = wp_remote_retrieve_response_code($response);
+			$body_response = wp_remote_retrieve_body($response);
+			error_log('Ollama response status: ' . $status);
+			error_log('Ollama response body: ' . substr($body_response, 0, 300));
 		}
 
 		return $response;
@@ -608,10 +658,11 @@ class GenericHttpAiConnector implements AiConnectorInterface
 		$failures = (int) get_transient(self::CIRCUIT_BREAKER_PREFIX . 'failures');
 		$failures++;
 
-		set_transient(self::CIRCUIT_BREAKER_PREFIX . 'failures', $failures, self::CIRCUIT_BREAKER_TTL);
+		$ttl = apply_filters('smartalt_circuit_breaker_ttl', self::CIRCUIT_BREAKER_TTL);
+		set_transient(self::CIRCUIT_BREAKER_PREFIX . 'failures', $failures, $ttl);
 
 		if ($failures >= self::MAX_FAILURES) {
-			Logger::log(null, null, null, null, 'ai', null, 'error', 'Circuit breaker activated after ' . self::MAX_FAILURES . ' failures', 'error');
+			Logger::log(null, null, null, null, 'ai', null, 'error', 'Circuit breaker activated', 'error');
 		}
 	}
 

@@ -432,11 +432,12 @@ class SettingsPage
 
 		<div class="smartalt-field">
 			<label for="smartalt_alt_source"><?php esc_html_e('Alt Text Source', 'smart-alt-tag-optimizer'); ?></label>
-			<select id="smartalt_alt_source" name="smartalt_alt_source">
+			<select id="smartalt_alt_source" name="smartalt_alt_source"> // Keep original name
 				<option value="post_title" <?php selected($alt_source, 'post_title'); ?>>
 					<?php esc_html_e('Post Title (Fast, No API)', 'smart-alt-tag-optimizer'); ?>
-				</option'smart-alt-tag-optimizer'				<option value="ai" <?php selected($alt_source, 'ai'); ?>>
-					<?php esc_html_e('AI Generated (Requires API, 1 call per page)', 'smart-alt-tag-optimizer'); ?>
+				</option>
+				<option value="ai" <?php selected($alt_source, 'ai'); ?>>
+					<?php esc_html_e('AI Generated (Requires API)', 'smart-alt-tag-optimizer'); ?>
 				</option>
 			</select>
 			<div class="smartalt-help">
@@ -609,7 +610,7 @@ class SettingsPage
 
 			document.getElementById('smartalt-clear-ai-cache')?.addEventListener('click', function() {
 				if (confirm('<?php esc_attr_e('Clear all cached AI results? This cannot be undone.', 'smart-alt-tag-optimizer'); ?>')) {
-					const nonce = document.querySelector('input[name="_wpnonce"]')?.value;
+					const nonce = document.querySelector('input[name="smartalt_bulk_nonce"]')?.value;
 					fetch(ajaxurl, {
 						method: 'POST',
 						headers: {
@@ -625,12 +626,8 @@ class SettingsPage
 			document.getElementById('smartalt-reset-batch-template')?.addEventListener('click', function(e) {
 				e.preventDefault();
 				const defaultTemplate = JSON.stringify({
-					"model": "gpt-4-vision-preview",
-					"messages": [{
-						"role": "user",
-						"content": "Generate concise, varied alt text for {image_count} images on a page about '{post_title}'.\n\nPage context:\n- Title: {post_title}\n- Excerpt: {post_excerpt}\n- Content: {post_content}\n\nImages with details:\n{images_json}\n\nFor each image, consider:\n1. Image filename\n2. Image position on page\n3. Page content context\n4. SEO best practices\n\nGenerate alt texts that are:\n- Descriptive and contextual\n- Under {max_length} characters\n- Varied (not all the same)\n- Helpful for accessibility\n\nReturn ONLY valid JSON: {\"image_url\": \"alt_text\", ...}"
-					}],
-					"temperature": 0.7
+					"model": "neural-chat",
+					"prompt": "I have {image_count} images on a page about '{post_title}'.\n\nPage content: {post_excerpt}\n\nImage files with positions:\n{images_json}\n\nGenerate varied, descriptive alt text for each image. Format response as JSON only: {\"image_url\": \"alt_text\", ...}\n\nEach alt text must be under {max_length} characters. Be specific and contextual."
 				}, null, 2);
 				document.getElementById('smartalt_ai_batch_prompt_template').value = defaultTemplate;
 				alert('<?php esc_attr_e('Default template loaded!', 'smart-alt-tag-optimizer'); ?>');
@@ -783,8 +780,8 @@ class SettingsPage
 				const forceUpdate = document.getElementById('smartalt_bulk_force_update').checked;
 				const nonce = document.querySelector('input[name="smartalt_bulk_nonce"]')?.value;
 
-
 				document.getElementById('smartalt-bulk-progress').style.display = 'block';
+				document.getElementById('smartalt-progress-bar').value = 0;
 				document.getElementById('smartalt-progress-text').textContent = '<?php esc_attr_e('Starting...', 'smart-alt-tag-optimizer'); ?>';
 
 				fetch(ajaxurl, {
@@ -805,18 +802,63 @@ class SettingsPage
 						if (d.success) {
 							if (dryRun) {
 								alert('<?php esc_attr_e('Dry run preview: ', 'smart-alt-tag-optimizer'); ?>' + d.data.message);
+								document.getElementById('smartalt-bulk-progress').style.display = 'none';
 							} else {
-								document.getElementById('smartalt-progress-text').textContent = 'Complete!';
-								alert('<?php esc_attr_e('Bulk update completed successfully!', 'smart-alt-tag-optimizer'); ?>');
+								const jobId = d.data.job_id;
+								processBatch(jobId, nonce, 0);
 							}
 						} else {
 							alert('Error: ' + (d.data?.message || 'Unknown error'));
+							document.getElementById('smartalt-bulk-progress').style.display = 'none';
 						}
-						document.getElementById('smartalt-bulk-progress').style.display = 'none';
 					})
 					.catch(e => {
 						alert('Error: ' + e.message);
 						document.getElementById('smartalt-bulk-progress').style.display = 'none';
+					});
+			}
+
+			function processBatch(jobId, nonce, retries = 0) {
+				fetch(ajaxurl, {
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/x-www-form-urlencoded'
+						},
+						body: new URLSearchParams({
+							action: 'smartalt_bulk_process_batch',
+							job_id: jobId,
+							_wpnonce: nonce
+						})
+					})
+					.then(r => r.json())
+					.then(d => {
+						if (d.success) {
+							const progressBar = document.getElementById('smartalt-progress-bar');
+							const progressText = document.getElementById('smartalt-progress-text');
+
+							progressBar.value = d.data.progress;
+							progressText.textContent = `<?php esc_attr_e('Progress: ', 'smart-alt-tag-optimizer'); ?>${d.data.processed}/${d.data.total} (${d.data.progress}%) | <?php esc_attr_e('Errors: ', 'smart-alt-tag-optimizer'); ?>${d.data.errors}`;
+
+							if (d.data.complete) {
+								alert('<?php esc_attr_e('Bulk update completed successfully!', 'smart-alt-tag-optimizer'); ?>');
+								document.getElementById('smartalt-bulk-progress').style.display = 'none';
+							} else {
+								// Process next batch after small delay
+								setTimeout(() => processBatch(jobId, nonce), 500);
+							}
+						} else {
+							alert('Error: ' + (d.data?.message || 'Unknown error'));
+							document.getElementById('smartalt-bulk-progress').style.display = 'none';
+						}
+					})
+					.catch(e => {
+						if (retries < 3) {
+							// Retry on network error
+							setTimeout(() => processBatch(jobId, nonce, retries + 1), 1000);
+						} else {
+							alert('Error: ' + e.message);
+							document.getElementById('smartalt-bulk-progress').style.display = 'none';
+						}
 					});
 			}
 		</script>
@@ -894,7 +936,7 @@ class SettingsPage
 							<td><small><?php echo esc_html($log->message); ?></small></td>
 							<td>
 								<?php if ('success' === $log->status && $log->old_alt) : ?>
-									<button class="button button-small smartalt-revert" data-log-id="<?php echo esc_attr($log->id); ?>" data-nonce="<?php echo esc_attr(wp_create_nonce('smartalt_revert_nonce')); ?>">
+									<button class="button button-small smartalt-revert" data-log-id="<?php echo esc_attr($log->id); ?>" data-nonce="<?php echo esc_attr(wp_create_nonce('smartalt_bulk_nonce')); ?>">
 										<?php esc_html_e('Revert', 'smart-alt-tag-optimizer'); ?>
 									</button>
 								<?php endif; ?>
