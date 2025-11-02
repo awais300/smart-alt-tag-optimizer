@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Injector - Server-side HTML output buffering for alt injection.
  *
@@ -19,7 +20,8 @@ use SmartAlt\Logger;
 /**
  * Frontend HTML injector singleton - processes all page images in one pass.
  */
-class Injector {
+class Injector
+{
 
 	/**
 	 * Singleton instance.
@@ -33,8 +35,9 @@ class Injector {
 	 *
 	 * @return Injector
 	 */
-	public static function instance() {
-		if ( null === self::$instance ) {
+	public static function instance()
+	{
+		if (null === self::$instance) {
 			self::$instance = new self();
 		}
 		return self::$instance;
@@ -50,13 +53,14 @@ class Injector {
 	 *
 	 * @return void
 	 */
-	public function start_buffering() {
+	public function start_buffering()
+	{
 		// Skip buffering in certain conditions
-		if ( $this->should_skip_buffering() ) {
+		if ($this->should_skip_buffering()) {
 			return;
 		}
 
-		ob_start( [ $this, 'buffer_callback' ] );
+		ob_start([$this, 'buffer_callback']);
 	}
 
 	/**
@@ -64,35 +68,36 @@ class Injector {
 	 *
 	 * @return bool
 	 */
-	private function should_skip_buffering() {
+	private function should_skip_buffering()
+	{
 		// Skip on feeds
-		if ( is_feed() ) {
+		if (is_feed()) {
 			return true;
 		}
 
 		// Skip on REST API
-		if ( defined( 'REST_REQUEST' ) && REST_REQUEST ) {
+		if (defined('REST_REQUEST') && REST_REQUEST) {
 			return true;
 		}
 
 		// Skip on WooCommerce dynamic pages (cart, checkout, account, etc)
-		if ( $this->is_woocommerce_dynamic_page() ) {
+		if ($this->is_woocommerce_dynamic_page()) {
 			return true;
 		}
 
 		// Skip for non-public post types
-		if ( is_singular() ) {
+		if (is_singular()) {
 			$post = get_queried_object();
-			if ( $post ) {
-				$post_type_obj = get_post_type_object( $post->post_type );
-				if ( ! $post_type_obj || ! $post_type_obj->public ) {
+			if ($post) {
+				$post_type_obj = get_post_type_object($post->post_type);
+				if (! $post_type_obj || ! $post_type_obj->public) {
 					return true;
 				}
 			}
 		}
 
 		// Skip non-singular pages (archives, search, etc)
-		if ( ! is_singular() ) {
+		if (! is_singular()) {
 			return true;
 		}
 
@@ -101,7 +106,7 @@ class Injector {
 		 *
 		 * @param bool $skip Whether to skip buffering.
 		 */
-		return apply_filters( 'smartalt_skip_buffering', false );
+		return apply_filters('smartalt_skip_buffering', false);
 	}
 
 	/**
@@ -109,22 +114,23 @@ class Injector {
 	 *
 	 * @return bool
 	 */
-	private function is_woocommerce_dynamic_page() {
-		if ( ! class_exists( 'WooCommerce' ) ) {
+	private function is_woocommerce_dynamic_page()
+	{
+		if (! class_exists('WooCommerce')) {
 			return false;
 		}
 
 		// Check for cart, checkout, account pages
-		if ( is_cart() || is_checkout() || is_account_page() ) {
+		if (is_cart() || is_checkout() || is_account_page()) {
 			return true;
 		}
 
 		// Check for pages with query parameters
-		if ( ! empty( $_GET ) ) {
+		if (! empty($_GET)) {
 			// Check for add-to-cart, wc-ajax, etc
-			$excluded_params = [ 'add-to-cart', 'wc-ajax', 'product_cat', 'product_tag', 'min_price', 'max_price' ];
-			foreach ( $excluded_params as $param ) {
-				if ( isset( $_GET[ $param ] ) ) {
+			$excluded_params = ['add-to-cart', 'wc-ajax', 'product_cat', 'product_tag', 'min_price', 'max_price'];
+			foreach ($excluded_params as $param) {
+				if (isset($_GET[$param])) {
 					return true;
 				}
 			}
@@ -136,64 +142,64 @@ class Injector {
 	/**
 	 * Output buffer callback - inject alt attributes for all images.
 	 *
-	 * Single pass processing:
-	 * 1. Extract all <img> tags
-	 * 2. Generate alt texts (post_title or AI batch)
-	 * 3. Inject alts back into HTML
-	 *
 	 * @param string $buffer HTML buffer.
 	 *
 	 * @return string Modified HTML buffer.
 	 */
-	public function buffer_callback( $buffer ) {
+	public function buffer_callback($buffer)
+	{
 		// Skip empty buffers
-		if ( ! $buffer || strlen( $buffer ) < 100 ) {
+		if (!$buffer || strlen($buffer) < 100) {
 			return $buffer;
 		}
 
-		// Get current post
+		// Get current post/page/archive context
 		$post = get_queried_object();
-		if ( ! $post || ! is_a( $post, 'WP_Post' ) ) {
-			return $buffer;
+
+		// Build context for alt generation
+		$context = $this->build_context($post);
+
+		if (!$context) {
+			return $buffer; // No context available
 		}
 
 		try {
-			// Extract all images that are missing alt text
-			$images = AttachmentHandler::extract_inline_images( $buffer );
-			if ( empty( $images ) ) {
+			// Extract all images
+			$images = AttachmentHandler::extract_inline_images($buffer);
+			if (empty($images)) {
 				return $buffer;
 			}
 
-			// Filter to only images without alt text
-			$images_without_alt = array_filter( $images, function( $image ) {
-				return empty( $image['alt'] );
-			} );
+			// Filter to only images without alt text (missing or empty)
+			$images_without_alt = array_filter($images, function ($image) {
+				return !$image['has_alt']; // Use the new has_alt flag
+			});
 
-			if ( empty( $images_without_alt ) ) {
+			if (empty($images_without_alt)) {
 				return $buffer; // All images already have alt
 			}
 
-			// Get alt source setting
-			$alt_source = get_option( 'smartalt_alt_source', 'post_title' );
+			// Get generation method setting
+			$generation_method = get_option('smartalt_generation_method', 'post_title');
 
-			// Generate alt texts based on source
-			if ( 'ai' === $alt_source ) {
-				$alt_texts = $this->generate_alts_via_ai( $images_without_alt, $post );
+			// Generate alt texts based on method
+			if ('ai' === $generation_method) {
+				$alt_texts = $this->generate_alts_via_ai($images_without_alt, $context);
 			} else {
-				$alt_texts = $this->generate_alts_from_post( $images_without_alt, $post );
+				$alt_texts = $this->generate_alts_from_post($images_without_alt, $context);
 			}
 
 			// Inject alt attributes into HTML
-			$buffer = $this->inject_alts_into_html( $buffer, $images_without_alt, $alt_texts );
+			$buffer = $this->inject_alts_into_html($buffer, $images_without_alt, $alt_texts);
 
 			return $buffer;
-		} catch ( \Exception $e ) {
+		} catch (\Exception $e) {
 			// Log error but don't break page
 			Logger::log(
 				null,
 				null,
 				null,
-				$post->ID ?? null,
+				$context['post_id'] ?? null,
 				'frontend',
 				null,
 				'error',
@@ -207,59 +213,144 @@ class Injector {
 	}
 
 	/**
-	 * Generate alt texts from post data (no API needed).
+	 * Build context for alt generation from various page types.
 	 *
-	 * Uses post title and excerpt for alt text generation.
-	 * Multiple images get varied alt text based on position and filename.
+	 * Handles: Posts, Pages, Archives, Categories, Tags, Search, etc.
 	 *
-	 * @param array    $images Images without alt text.
-	 * @param \WP_Post $post   Post object.
+	 * @param mixed $queried_object Result from get_queried_object().
+	 *
+	 * @return array|null Context array or null if unable to build.
+	 */
+	private function build_context($queried_object)
+	{
+		// If it's a WP_Post object (post, page, custom post type)
+		if (is_a($queried_object, 'WP_Post')) {
+			return (array) $queried_object + [
+				'post_id'   => $queried_object->ID,
+				'post_type' => $queried_object->post_type,
+				'source'    => 'post',
+			];
+		}
+
+		// If it's a WP_Term object (category, tag, custom taxonomy)
+		if (is_a($queried_object, 'WP_Term')) {
+			return [
+				'post_id'       => 0,
+				'post_type'     => 'term',
+				'post_title'    => $queried_object->name,
+				'post_excerpt'  => $queried_object->description,
+				'post_content'  => $queried_object->description,
+				'source'        => 'term',
+			];
+		}
+
+		// Fallback: Try to extract from current URL
+		$url_context = $this->build_context_from_url();
+		if ($url_context) {
+			return $url_context;
+		}
+
+		return null;
+	}
+
+	/**
+	 * Build context from URL when no WP_Post or WP_Term available.
+	 *
+	 * Used for: search pages, 404, custom pages, etc.
+	 *
+	 * @return array|null Context array or null.
+	 */
+	private function build_context_from_url()
+	{
+		// Get current URL path (without query string)
+		$url_path = wp_parse_url(home_url(add_query_arg([])), PHP_URL_PATH);
+		$current_path = wp_parse_url(home_url($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH);
+
+		// Remove home path from current path
+		$relative_path = str_replace($url_path, '', $current_path);
+
+		// Remove trailing slash and query string
+		$relative_path = trim($relative_path, '/');
+		$relative_path = explode('?', $relative_path)[0];
+
+		if (!$relative_path) {
+			return null; // Likely homepage
+		}
+
+		// Get last URL segment (no slashes)
+		$segments = explode('/', trim($relative_path, '/'));
+		$last_segment = end($segments);
+
+		if (!$last_segment) {
+			return null;
+		}
+
+		// Convert URL slug to readable text
+		$title = ucfirst(str_replace(['-', '_'], ' ', $last_segment));
+
+		// Determine page type
+		$page_type = 'page';
+		if (is_search()) {
+			$page_type = 'search';
+			$title = 'Search: ' . get_search_query();
+		} elseif (is_404()) {
+			$page_type = '404';
+			$title = 'Page Not Found';
+		}
+
+		return [
+			'post_id'       => 0,
+			'post_type'     => $page_type,
+			'post_title'    => $title,
+			'post_excerpt'  => $title,
+			'post_content'  => $title,
+			'source'        => 'url',
+		];
+	}
+
+	/**
+	 * Generate alt texts from post/page/context data (no API needed).
+	 *
+	 * Handles both attached and external/orphaned images.
+	 *
+	 * @param array $images Images without alt text.
+	 * @param array $context Context array with post data.
 	 *
 	 * @return array Map of image_url => alt_text.
 	 */
-	private function generate_alts_from_post( $images, $post ) {
+	private function generate_alts_from_post($images, $context)
+	{
 		$alts = [];
-		$title = Sanitize::alt_text( $post->post_title, 125 );
-		$excerpt = Sanitize::alt_text( $post->post_excerpt, 125 );
+		$title = Sanitize::alt_text($context['post_title'] ?? '', 125);
+		$excerpt = Sanitize::alt_text($context['post_excerpt'] ?? '', 125);
 
 		// Use excerpt if available, otherwise title
 		$base_alt = $excerpt ?: $title;
 
-		$image_count = count( $images );
+		if (!$base_alt) {
+			$base_alt = 'Image'; // Absolute fallback
+		}
 
-		foreach ( $images as $index => $image ) {
+		// Generate alt for each image
+		foreach ($images as $image) {
 			$image_url = $image['url'];
 
-			// For single image, just use base alt
-			if ( 1 === $image_count ) {
-				$alts[ $image_url ] = $base_alt;
-				continue;
-			}
-
-			// For multiple images, vary the alt text
+			// Start with base alt
 			$alt = $base_alt;
 
-			// Add image filename for context (if different from base)
-			$filename = AttachmentHandler::get_filename_from_url( $image_url );
-			if ( $filename ) {
-				$filename_text = ucfirst( str_replace( [ '-', '_' ], ' ', pathinfo( $filename, PATHINFO_FILENAME ) ) );
+			// Add image filename for additional context
+			$filename = AttachmentHandler::get_filename_from_url($image_url);
+			if ($filename) {
+				$filename_text = ucfirst(str_replace(['-', '_'], ' ', pathinfo($filename, PATHINFO_FILENAME)));
 				$additional_context = ' - ' . $filename_text;
 
 				// Ensure we stay under 125 characters
-				if ( strlen( $alt . $additional_context ) <= 125 ) {
+				if (strlen($alt . $additional_context) <= 125) {
 					$alt .= $additional_context;
 				}
 			}
 
-			// If still under limit, add position context
-			if ( strlen( $alt ) < 110 && $image_count > 2 ) {
-				$position_text = ' (Image ' . ( $index + 1 ) . ')';
-				if ( strlen( $alt . $position_text ) <= 125 ) {
-					$alt .= $position_text;
-				}
-			}
-
-			$alts[ $image_url ] = Sanitize::alt_text( $alt, 125 );
+			$alts[$image_url] = Sanitize::alt_text($alt, 125);
 		}
 
 		return $alts;
@@ -270,44 +361,45 @@ class Injector {
 	 *
 	 * One API call processes all images on the page with context awareness.
 	 *
-	 * @param array    $images Images without alt text.
-	 * @param \WP_Post $post   Post object.
+	 * @param array $images Images without alt text.
+	 * @param array $context Context array with page data.
 	 *
 	 * @return array Map of image_url => alt_text, or empty array on failure.
 	 */
-	private function generate_alts_via_ai( $images, $post ) {
+	private function generate_alts_via_ai($images, $context)
+	{
 		try {
 			$connector = AiConnectorFactory::get_connector();
-			if ( ! $connector ) {
+			if (!$connector) {
 				// Fallback to post title
-				return $this->generate_alts_from_post( $images, $post );
+				return $this->generate_alts_from_post($images, $context);
 			}
 
 			// Build context for AI
-			$context = [
-				'post_title'   => $post->post_title,
-				'post_excerpt' => $post->post_excerpt,
-				'post_content' => wp_strip_all_tags( $post->post_content ),
+			$ai_context = [
+				'post_title'   => $context['post_title'] ?? '',
+				'post_excerpt' => $context['post_excerpt'] ?? '',
+				'post_content' => wp_strip_all_tags($context['post_content'] ?? ''),
 				'images'       => $images,
-				'image_count'  => count( $images ),
+				'image_count'  => count($images),
 			];
 
 			// Single AI call for all images on the page
-			$alt_texts = $connector->generate_batch_alts( $context );
+			$alt_texts = $connector->generate_batch_alts($ai_context);
 
 			// If AI failed, fallback to post title
-			if ( empty( $alt_texts ) ) {
-				return $this->generate_alts_from_post( $images, $post );
+			if (empty($alt_texts)) {
+				return $this->generate_alts_from_post($images, $context);
 			}
 
 			return $alt_texts;
-		} catch ( \Exception $e ) {
+		} catch (\Exception $e) {
 			// Log error but don't break page
 			Logger::log(
 				null,
 				null,
 				null,
-				$post->ID ?? null,
+				$context['post_id'] ?? null,
 				'ai',
 				null,
 				'error',
@@ -316,14 +408,14 @@ class Injector {
 			);
 
 			// Fallback to post title
-			return $this->generate_alts_from_post( $images, $post );
+			return $this->generate_alts_from_post($images, $context);
 		}
 	}
 
 	/**
 	 * Inject alt attributes into HTML.
 	 *
-	 * Replaces img tags with alt attributes.
+	 * Handles various img tag formats robustly.
 	 *
 	 * @param string $buffer    HTML buffer.
 	 * @param array  $images    Image data array.
@@ -331,33 +423,41 @@ class Injector {
 	 *
 	 * @return string Modified HTML buffer.
 	 */
-	private function inject_alts_into_html( $buffer, $images, $alt_texts ) {
-		foreach ( $images as $image ) {
+	private function inject_alts_into_html($buffer, $images, $alt_texts)
+	{
+		foreach ($images as $image) {
 			$url = $image['url'];
 
 			// Skip if no alt text generated
-			if ( empty( $alt_texts[ $url ] ) ) {
+			if (empty($alt_texts[$url])) {
 				continue;
 			}
 
-			$new_alt = $alt_texts[ $url ];
+			$new_alt = $alt_texts[$url];
 			$old_tag = $image['match'];
+			$escaped_alt = Sanitize::escape_alt($new_alt);
 
-			// Escape alt for HTML attribute
-			$escaped_alt = Sanitize::escape_alt( $new_alt );
-
-			// Inject alt attribute before closing tag
-			$new_tag = preg_replace(
-				'/\s*\/>$/',
-				' alt="' . $escaped_alt . '" />',
-				$old_tag
-			);
-
-			// Replace in buffer (use strpos for performance on large pages)
-			$pos = strpos( $buffer, $old_tag );
-			if ( false !== $pos ) {
-				$buffer = substr_replace( $buffer, $new_tag, $pos, strlen( $old_tag ) );
+			// Check if alt attribute already exists
+			if (preg_match('/\salt=[\'"]?[^\s\'">;]*[\'"]?/', $old_tag)) {
+				// Replace existing alt attribute (handles: alt="", alt='', alt=value)
+				$new_tag = preg_replace(
+					'/\salt=[\'"]?[^\s\'">;]*[\'"]?/',
+					' alt="' . $escaped_alt . '"',
+					$old_tag
+				);
+			} else {
+				// Add alt attribute before closing > or />
+				if (preg_match('/\s*\/>$/', $old_tag)) {
+					// Self-closing tag
+					$new_tag = preg_replace('/\s*\/>$/', ' alt="' . $escaped_alt . '" />', $old_tag);
+				} else {
+					// Regular closing tag
+					$new_tag = preg_replace('/\s*>$/', ' alt="' . $escaped_alt . '">', $old_tag);
+				}
 			}
+
+			// Replace in buffer
+			$buffer = str_replace($old_tag, $new_tag, $buffer);
 		}
 
 		return $buffer;

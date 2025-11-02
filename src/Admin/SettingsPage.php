@@ -78,8 +78,8 @@ class SettingsPage
 		// Register all individual settings
 		$settings = [
 			'smartalt_enabled'                     => 1,
-			'smartalt_alt_source'                  => 'post_title',
-			'smartalt_injection_method'            => 'server_buffer',
+			'smartalt_frontend_injection_enabled'  => 1,
+			'smartalt_generation_method'           => 'post_title',
 			'smartalt_max_alt_length'              => 125,
 			'smartalt_cache_ai_results'            => 1,
 			'smartalt_ai_cache_ttl_days'           => 90,
@@ -145,17 +145,15 @@ class SettingsPage
 		switch ($option_name) {
 			// Checkboxes: 1 or 0
 			case 'smartalt_enabled':
+			case 'smartalt_frontend_injection_enabled':
 			case 'smartalt_cache_ai_results':
 			case 'smartalt_logging_enabled':
 			case 'smartalt_bulk_force_update':
 				return $value ? 1 : 0;
 
 				// Selects: validate against allowed values
-			case 'smartalt_alt_source':
+			case 'smartalt_generation_method':
 				return in_array($value, ['post_title', 'ai'], true) ? $value : 'post_title';
-
-			case 'smartalt_injection_method':
-				return in_array($value, ['server_buffer', 'js_injection'], true) ? $value : 'server_buffer';
 
 			case 'smartalt_bulk_schedule':
 				return in_array($value, ['none', 'daily', 'weekly'], true) ? $value : 'none';
@@ -198,7 +196,6 @@ class SettingsPage
 				$path = Sanitize::json_path($value);
 				return $path ?: '';
 
-				// API Key: encrypt if new value provided
 			case 'smartalt_ai_key':
 				// If value is masked (placeholder), keep existing
 				if ('••••••••' === $value || ! $value) {
@@ -412,15 +409,14 @@ class SettingsPage
 	private function render_general_settings()
 	{
 		$enabled = (bool) get_option('smartalt_enabled');
-		$alt_source = get_option('smartalt_alt_source', 'post_title');
-		$injection_method = get_option('smartalt_injection_method', 'server_buffer');
+		$injection_enabled = (bool) get_option('smartalt_frontend_injection_enabled', 1);
+		$generation_method = get_option('smartalt_generation_method', 'post_title');
 		$max_length = (int) get_option('smartalt_max_alt_length', 125);
 
 	?>
-		<!-- ✅ NO <form> TAG - All inside master form -->
-
 		<!-- Hidden fields to ensure unchecked checkboxes are submitted as 0 -->
 		<input type="hidden" name="smartalt_enabled" value="0" />
+		<input type="hidden" name="smartalt_frontend_injection_enabled" value="0" />
 
 		<div class="smartalt-field">
 			<label for="smartalt_enabled">
@@ -431,32 +427,25 @@ class SettingsPage
 		</div>
 
 		<div class="smartalt-field">
-			<label for="smartalt_alt_source"><?php esc_html_e('Alt Text Source', 'smart-alt-tag-optimizer'); ?></label>
-			<select id="smartalt_alt_source" name="smartalt_alt_source"> // Keep original name
-				<option value="post_title" <?php selected($alt_source, 'post_title'); ?>>
-					<?php esc_html_e('Post Title (Fast, No API)', 'smart-alt-tag-optimizer'); ?>
-				</option>
-				<option value="ai" <?php selected($alt_source, 'ai'); ?>>
-					<?php esc_html_e('AI Generated (Requires API)', 'smart-alt-tag-optimizer'); ?>
-				</option>
-			</select>
-			<div class="smartalt-help">
-				<?php esc_html_e('Choose the source for generating alt text. Post Title is instant. AI provides varied, contextual alts but requires an API key.', 'smart-alt-tag-optimizer'); ?>
-			</div>
+			<label for="smartalt_frontend_injection_enabled">
+				<input type="checkbox" id="smartalt_frontend_injection_enabled" name="smartalt_frontend_injection_enabled" value="1" <?php checked($injection_enabled); ?> />
+				<?php esc_html_e('Enable Frontend Injection (Server-side)', 'smart-alt-tag-optimizer'); ?>
+			</label>
+			<div class="smartalt-help"><?php esc_html_e('Automatically inject missing alt text on page load using server-side processing. Best for SEO. Crawlers see alt text immediately.', 'smart-alt-tag-optimizer'); ?></div>
 		</div>
 
 		<div class="smartalt-field">
-			<label for="smartalt_injection_method"><?php esc_html_e('Frontend Injection Method', 'smart-alt-tag-optimizer'); ?></label>
-			<select id="smartalt_injection_method" name="smartalt_injection_method">
-				<option value="server_buffer" <?php selected($injection_method, 'server_buffer'); ?>>
-					<?php esc_html_e('Server-side Buffer (Recommended)', 'smart-alt-tag-optimizer'); ?>
+			<label for="smartalt_generation_method"><?php esc_html_e('Alt Text Generation Method', 'smart-alt-tag-optimizer'); ?></label>
+			<select id="smartalt_generation_method" name="smartalt_generation_method">
+				<option value="post_title" <?php selected($generation_method, 'post_title'); ?>>
+					<?php esc_html_e('Post Title (Fast, No API)', 'smart-alt-tag-optimizer'); ?>
 				</option>
-				<option value="js_injection" <?php selected($injection_method, 'js_injection'); ?>>
-					<?php esc_html_e('JavaScript (Fallback only)', 'smart-alt-tag-optimizer'); ?>
+				<option value="ai" <?php selected($generation_method, 'ai'); ?>>
+					<?php esc_html_e('AI Generated (Requires API, 1 call per page)', 'smart-alt-tag-optimizer'); ?>
 				</option>
 			</select>
 			<div class="smartalt-help">
-				<?php esc_html_e('Server-side is best for SEO and performance. JS is slower and doesn\'t help crawlers.', 'smart-alt-tag-optimizer'); ?>
+				<?php esc_html_e('Choose the method for generating alt text. Post Title is instant. AI provides varied, contextual alts but requires an API key configured in AI Configuration tab.', 'smart-alt-tag-optimizer'); ?>
 			</div>
 		</div>
 

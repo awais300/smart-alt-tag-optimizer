@@ -92,7 +92,7 @@ class Bootstrap
 			add_action('woocommerce_rest_insert_product', [$woo_integrator, 'process_product_rest'], 15, 3);
 		}
 
-		// Frontend output buffering
+		// Frontend output buffering (server-side injection only)
 		if ($this->is_frontend_injection_enabled() && ! is_admin() && ! is_feed()) {
 			$injector = Injector::instance();
 			add_action('template_redirect', [$injector, 'start_buffering'], 1);
@@ -139,8 +139,8 @@ class Bootstrap
 		// Set default options if not already set
 		if (! get_option('smartalt_enabled')) {
 			update_option('smartalt_enabled', 1);
-			update_option('smartalt_alt_source', 'post_title');
-			update_option('smartalt_injection_method', 'server_buffer');
+			update_option('smartalt_frontend_injection_enabled', 1);
+			update_option('smartalt_generation_method', 'post_title');
 			update_option('smartalt_max_alt_length', 125);
 			update_option('smartalt_batch_size', 100);
 			update_option('smartalt_cache_ai_results', 1);
@@ -167,11 +167,15 @@ class Bootstrap
 
 		// Optional: Log deactivation
 		Logger::log(
+			null,
+			null,
+			null,
+			null,
+			'system',
+			null,
+			'success',
 			'Plugin deactivated',
-			null,
-			null,
-			'deactivation',
-			'system'
+			'info'
 		);
 	}
 
@@ -182,7 +186,7 @@ class Bootstrap
 	 */
 	private function is_frontend_injection_enabled()
 	{
-		return (bool) get_option('smartalt_enabled') && 'server_buffer' === get_option('smartalt_injection_method');
+		return (bool) get_option('smartalt_enabled') && (bool) get_option('smartalt_frontend_injection_enabled', 1);
 	}
 
 	/**
